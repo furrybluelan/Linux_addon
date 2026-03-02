@@ -23,7 +23,7 @@ jobs:
           mkdir build && cd build
           TOOLCHAIN=$NDK_PATH/toolchains/llvm/prebuilt/linux-x86_64
           
-          # 核心配置：加入 --disable-elf-shlibs 确保完全不生成动态库
+          # 核心配置：明确禁用共享库，强制内建库
           ../configure --host=aarch64-linux-android --build=x86_64-linux-gnu \
               --enable-libuuid=internal \
               --enable-libblkid=internal \
@@ -34,16 +34,18 @@ jobs:
               LDFLAGS="-static" \
               cross_compiling=yes
 
-          # 关键修正：先执行顶层 make subs，生成所有头文件(如 dirpaths.h)
-          # 然后再编译核心工具，并强制拷贝避开硬链接权限问题
-          make -j$(nproc) LN="cp -p" LN_S="cp -p" subs
-          make -j$(nproc) LN="cp -p" LN_S="cp -p" -C e2fsck
-          make -j$(nproc) LN="cp -p" LN_S="cp -p" -C resize
+          # 1. 首先在顶层目录执行 make，但不指定具体目标。
+          # 这会自动生成所有必要的头文件（如 dirpaths.h），避免 fatal error
+          # 同时强制使用拷贝代替硬链接，防止权限报错
+          make -j$(nproc) LN="cp -p" LN_S="cp -p"
+
+          # 2. 确认核心工具是否已生成
+          ls -l e2fsck/e2fsck resize/resize2fs
 
       - name: Upload Static Binaries
         uses: actions/upload-artifact@v4
         with:
-          name: e2fsprogs-1.47.3-fixed
+          name: e2fsprogs-1.47.3-static
           path: |
             build/e2fsck/e2fsck
             build/resize/resize2fs
