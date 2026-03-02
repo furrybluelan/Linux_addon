@@ -1,0 +1,48 @@
+name: Build Latest Nano 8.2 for Android
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install Toolchain
+        run: sudo apt-get update && sudo apt-get install -y gcc-aarch64-linux-gnu binutils-aarch64-linux-gnu make wget
+
+      - name: Build Ncurses 6.5 (Static)
+        run: |
+          wget https://invisible-mirror.net/archives/ncurses/ncurses-6.5.tar.gz
+          tar -xf ncurses-6.5.tar.gz
+          cd ncurses-6.5
+          ./configure --host=aarch64-linux-gnu --with-shared=no --enable-static --enable-widec --without-debug CPPFLAGS="-P"
+          make -j$(nproc)
+          mkdir -p ../dist/lib ../dist/include
+          cp lib/libncursesw.a ../dist/lib/
+          cp include/*.h ../dist/include/
+
+      - name: Build Nano 8.2 (Full Static)
+        run: |
+          wget https://www.nano-editor.org/dist/v8/nano-8.2.tar.gz
+          tar -xf nano-8.2.tar.gz
+          cd nano-8.2
+          # 核心：使用 cross_compiling=yes 彻底解决你在 Vim 编译中遇到的 "cannot create executables" 报错
+          ./configure --host=aarch64-linux-gnu \
+                      CC=aarch64-linux-gnu-gcc \
+                      --enable-utf8 \
+                      --enable-static \
+                      --enable-color \
+                      --enable-nanorc \
+                      cross_compiling=yes \
+                      CPPFLAGS="-I$(pwd)/../dist/include" \
+                      LDFLAGS="-static -L$(pwd)/../dist/lib" \
+                      LIBS="-lncursesw"
+          make -j$(nproc)
+          # 极致瘦身，只保留运行核心
+          aarch64-linux-gnu-strip src/nano
+
+      - name: Upload Binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: nano-8.2-android
+          path: nano-8.2/src/nano
