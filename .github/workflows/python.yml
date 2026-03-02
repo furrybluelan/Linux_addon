@@ -1,7 +1,7 @@
 name: Android Python 3.13 Binary Build
 
 on:
-  workflow_dispatch: # 支持手动点击运行
+  workflow_dispatch:
 
 jobs:
   build:
@@ -14,34 +14,28 @@ jobs:
           ref: 'v3.13.0'
 
       - name: 1. Build Host Python (The Helper)
-        # 交叉编译必须先在当前目录下拥有一个相同版本的宿主机助手
+        # 交叉编译必须先有宿主机助手
         run: |
           ./configure
           make -j$(nproc)
-          # 验证助手是否可用
-          ./python --version
           cp python host_python
 
-      - name: 2. Setup NDK & OpenSSL
-        # 自动探测 NDK 路径并编译针对 Android 的静态 OpenSSL
+      - name: 2. Setup NDK & Build Static OpenSSL
+        # 自动探测 NDK 并编译 Android 专用的静态 OpenSSL
         run: |
-          # 自动定位 GitHub 环境中最新的 NDK 路径
           NDK_PATH=$(ls -d $ANDROID_SDK_ROOT/ndk/* | tail -1)
-          echo "ANDROID_NDK_ROOT=$NDK_PATH" >> $GITHUB_ENV
           echo "TOOLCHAIN=$NDK_PATH/toolchains/llvm/prebuilt/linux-x86_64" >> $GITHUB_ENV
           
-          # 编译静态 OpenSSL
           git clone --depth 1 -b openssl-3.0.13 https://github.com/openssl/openssl.git
           cd openssl
-          export ANDROID_NDK_ROOT=$NDK_PATH
           export PATH=$NDK_PATH/toolchains/llvm/prebuilt/linux-x86_64/bin:$PATH
           ./Configure android-arm64 no-shared -D__ANDROID_API__=29 --prefix=$(pwd)/dist
           make -j$(nproc)
           make install_sw
           echo "OPENSSL_DIR=$(pwd)/dist" >> $GITHUB_ENV
 
-      - name: 3. Configure Python Binary
-        # 写入 Setup 文件强制静态链接 SSL 并禁用所有报错模块
+      - name: 3. Configure Python with Disabled Modules
+        # 写入 Setup 文件强制禁用所有报错模块
         run: |
           export CC=$TOOLCHAIN/bin/aarch64-linux-android29-clang
           
@@ -50,7 +44,7 @@ jobs:
           _ssl _ssl.c -I${{ env.OPENSSL_DIR }}/include -L${{ env.OPENSSL_DIR }}/lib64 -lssl -lcrypto
           _hashlib _hashopenssl.c -I${{ env.OPENSSL_DIR }}/include -L${{ env.OPENSSL_DIR }}/lib64 -lssl -lcrypto
           
-          # 彻底禁用所有依赖缺失的模块，解决 lzma 和 ffi.h 报错
+          # 彻底禁用会导致报错的模块
           *disabled*
           _lzma
           _bz2
@@ -65,21 +59,19 @@ jobs:
 
           ./configure --host=aarch64-linux-android --build=x86_64-linux-gnu \
             --with-build-python=$(pwd)/host_python \
-            --disable-shared \
-            --without-ensurepip \
+            --disable-shared --without-ensurepip \
             --with-openssl=${{ env.OPENSSL_DIR }} \
             ac_cv_file__dev_ptmx=yes ac_cv_file__dev_ptc=no
 
       - name: 4. Final Build
-        # 执行最后的编译并提取二进制文件
+        # 运行最终编译并提取纯二进制文件
         run: |
           make -j$(nproc)
           mkdir -p output
-          # 提取核心二进制文件
           cp python output/python3.13_android
 
-      - name: Upload Python Binary
+      - name: Upload Binary
         uses: actions/upload-artifact@v4
         with:
-          name: python-3.13-static-ssl-android
+          name: python-3.13-android
           path: output/python3.13_android
