@@ -1,0 +1,71 @@
+name: Build Android 13 Shared Libs (Ultimate)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout util-linux
+        uses: actions/checkout@v4
+        with:
+          repository: util-linux/util-linux
+          fetch-depth: 1
+
+      - name: Setup NDK r26b
+        uses: nsoft7/setup-ndk@v1
+        with:
+          ndk-version: r26b # 使用支持安卓 13 的现代 NDK
+
+      - name: Configure and Build
+        run: |
+          ./autogen.sh
+          
+          # 设置 NDK 交叉编译路径
+          export TOOLCHAIN=$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64
+          export TARGET=aarch64-linux-android33 # 强制指定 Android 13 (API 33)
+          export CC=$TOOLCHAIN/bin/$TARGET-clang
+          export AR=$TOOLCHAIN/bin/llvm-ar
+          export STRIP=$TOOLCHAIN/bin/llvm-strip
+
+          # 开启所有磁盘相关功能，禁用不需要的系统组件
+          ./configure --host=aarch64-linux-android \
+                      --prefix=/system \
+                      --enable-shared \
+                      --disable-static \
+                      --disable-all-programs \
+                      --enable-libuuid \
+                      --enable-libblkid \
+                      --enable-libmount \
+                      --enable-libsmartcols \
+                      --without-python \
+                      --without-systemd \
+                      --without-udev \
+                      --without-ncurses \
+                      --disable-makeinstall-chown
+
+          # 只编译核心动态库
+          make -j$(nproc)
+          
+          # 整理产物并保留 pkg-config 文件（用于以后本地编译免报错）
+          mkdir -p output/lib64
+          mkdir -p output/pkgconfig
+          
+          cp .libs/libmount.so.1.* output/lib64/
+          cp .libs/libblkid.so.1.* output/lib64/
+          cp .libs/libuuid.so.1.* output/lib64/
+          cp .libs/libsmartcols.so.1.* output/lib64/
+          
+          cp libmount/libmount.pc output/pkgconfig/
+          cp libblkid/libblkid.pc output/pkgconfig/
+          cp uuid/libuuid.pc output/pkgconfig/
+          
+          # 移除调试符号，减小体积
+          $STRIP --strip-unneeded output/lib64/*.so*
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: android13-libs-bundle
+          path: output/
