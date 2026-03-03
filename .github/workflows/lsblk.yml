@@ -1,4 +1,4 @@
-name: Build Static lsblk
+name: Build Dynamic lsblk for Custom System Libs
 
 on:
   workflow_dispatch:
@@ -6,16 +6,6 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        include:
-          - arch: aarch64
-            gcc_pkg: gcc-aarch64-linux-gnu
-            host_triplet: aarch64-linux-gnu
-          - arch: x86_64
-            gcc_pkg: gcc
-            host_triplet: x86_64-linux-gnu
-
     steps:
       - name: Checkout util-linux
         uses: actions/checkout@v4
@@ -27,55 +17,48 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y \
-            autoconf \
-            automake \
-            libtool \
-            pkg-config \
-            bison \
-            flex \
-            gettext \
-            autopoint \
-            ${{ matrix.gcc_pkg }}
+            autoconf automake libtool pkg-config bison flex gettext autopoint \
+            gcc-aarch64-linux-gnu
 
       - name: Configure and Build
         run: |
           ./autogen.sh
           
-          # 设置编译器
-          if [ "${{ matrix.arch }}" = "aarch64" ]; then
-            export CC=aarch64-linux-gnu-gcc
-          else
-            export CC=gcc
-          fi
+          export CC=aarch64-linux-gnu-gcc
+          # 关键点：设置 RPATH 让程序去 /system/lib64 找库
+          # 并且通过 LDFLAGS 允许未定义的符号在运行时解析
+          export LDFLAGS="-Wl,-rpath=/system/lib64 -Wl,--dynamic-linker=/system/bin/linker64"
 
-          # 针对 Android /system/bin 优化的全静态配置
           ./configure \
-            --host=${{ matrix.host_triplet }} \
-            LDFLAGS="-static" \
+            --host=aarch64-linux-gnu \
             --disable-all-programs \
             --enable-lsblk \
-            --enable-static-programs=lsblk \
+            --enable-libblkid \
+            --enable-libmount \
+            --enable-libsmartcols \
+            --disable-static \
+            --enable-shared \
             --without-udev \
             --without-ncurses \
             --without-python \
             --without-tinfo \
             --without-cap-ng \
-            --without-libz \
-            --without-libmagic \
             --disable-bash-completion \
             --disable-nls
 
+          # 我们只需要 lsblk 程序本身
           make lsblk -j$(nproc)
           
-          # 移除符号表减小体积
-          if [ "${{ matrix.arch }}" = "aarch64" ]; then
-            aarch64-linux-gnu-strip lsblk
-          else
-            strip lsblk
-          fi
+          # 瘦身
+          aarch64-linux-gnu-strip lsblk
+
+      - name: Verify Linkage
+        run: |
+          # 检查动态链接依赖
+          aarch64-linux-gnu-readelf -d lsblk | grep NEEDED
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: lsblk-${{ matrix.arch }}
+          name: lsblk-android-dynamic
           path: lsblk
