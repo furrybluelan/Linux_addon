@@ -1,4 +1,4 @@
-name: Build NDK-Native lsblk (Final Fix v3)
+name: Build NDK-Native lsblk (Final Fix v4)
 
 on:
   workflow_dispatch:
@@ -25,14 +25,13 @@ jobs:
 
       - name: Patch NDK Compatibility
         run: |
-          # 1. 修复 getusershell/endusershell (图 3446 报错)
+          # 1. 修复 getusershell (图 3446)
           sed -i '1i #define getusershell() (NULL)\n#define endusershell() ((void)0)' lib/shells.c
           
-          # 2. 修复 versionsort 缺失 (图 3447 报错)
+          # 2. 修复 versionsort (图 3447)
           sed -i 's/versionsort/alphasort/g' libmount/src/tab_parse.c
 
-          # 3. 彻底解决 fanotify 链接错误 (针对图 3450 的 symbol not defined)
-          # 我们不再清空文件，而是提供一个空的存根函数，防止链接器报错
+          # 3. 修复 fanotify 链接错误 (图 3450)
           cat <<EOF > libmount/src/monitor_fanotify.c
           #include <stdlib.h>
           int mnt_monitor_enable_fanotify(struct libmnt_monitor *mn __attribute__((__unused__)), 
@@ -50,6 +49,10 @@ jobs:
           export API=29
           
           export CC=$TOOLCHAIN/bin/${TARGET}${API}-clang
+          # 强制禁用 NCURSES 相关的环境变量，防止检测到系统自带的库
+          export NCURSES_CFLAGS=" "
+          export NCURSES_LIBS=" "
+          
           export CFLAGS="-Wno-implicit-function-declaration -Wno-int-conversion"
           export LDFLAGS="-Wl,-rpath=/system/lib64 -Wl,--dynamic-linker=/system/bin/linker64"
 
@@ -64,6 +67,9 @@ jobs:
             --disable-static \
             --without-udev \
             --without-ncurses \
+            --without-ncursesw \
+            --without-tinfo \
+            --without-readline \
             --without-python \
             --disable-bash-completion \
             --disable-nls \
@@ -71,19 +77,20 @@ jobs:
             --disable-libmount-mountfd-support \
             --disable-monitor-fanotify
 
+          # 只编译我们需要的库和程序
           make lsblk -j$(nproc)
           
-          # 提取 ELF 真身
+          # 提取真身
           cp .libs/lsblk lsblk
           $TOOLCHAIN/bin/llvm-strip lsblk
 
-      - name: Check Linkage
+      - name: Check Dependencies
         run: |
-          # 验证是否链接到了 Android 的 libc.so 而不是 libc.so.6
+          # 验证是否只链接到了 Android libc.so 且没有 tinfo
           readelf -d lsblk | grep NEEDED
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: lsblk-ndk-v3
+          name: lsblk-ndk-v4
           path: lsblk
