@@ -1,4 +1,4 @@
-name: Build NDK-Native lsblk (Final Fix v2)
+name: Build NDK-Native lsblk (Final Fix v3)
 
 on:
   workflow_dispatch:
@@ -31,9 +31,15 @@ jobs:
           # 2. 修复 versionsort 缺失 (图 3447 报错)
           sed -i 's/versionsort/alphasort/g' libmount/src/tab_parse.c
 
-          # 3. 强力修复 sys/fanotify.h 缺失 (图 3448, 3449 报错)
-          # 直接清空该文件内容，使其变成一个空的编译单元，从而绕过头文件检查
-          echo "/* patched */" > libmount/src/monitor_fanotify.c
+          # 3. 彻底解决 fanotify 链接错误 (针对图 3450 的 symbol not defined)
+          # 我们不再清空文件，而是提供一个空的存根函数，防止链接器报错
+          cat <<EOF > libmount/src/monitor_fanotify.c
+          #include <stdlib.h>
+          int mnt_monitor_enable_fanotify(struct libmnt_monitor *mn __attribute__((__unused__)), 
+                                         int enable __attribute__((__unused__))) {
+              return -1; 
+          }
+          EOF
 
       - name: Configure and Build
         run: |
@@ -65,15 +71,19 @@ jobs:
             --disable-libmount-mountfd-support \
             --disable-monitor-fanotify
 
-          # 编译
           make lsblk -j$(nproc)
           
-          # 提取 ELF 真身并重命名为 lsblk
+          # 提取 ELF 真身
           cp .libs/lsblk lsblk
           $TOOLCHAIN/bin/llvm-strip lsblk
+
+      - name: Check Linkage
+        run: |
+          # 验证是否链接到了 Android 的 libc.so 而不是 libc.so.6
+          readelf -d lsblk | grep NEEDED
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: lsblk-ndk-v2
+          name: lsblk-ndk-v3
           path: lsblk
