@@ -13,19 +13,23 @@ jobs:
           repository: util-linux/util-linux
           fetch-depth: 1
 
+      - name: Install Build Dependencies
+        # 补齐 autopoint, bison 等构建工具
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gettext bison flex autopoint build-essential pkg-config libtool autoconf automake
+
       - name: Build Core Libraries
         run: |
           ./autogen.sh
           
-          # 直接使用 GitHub Runner 自带的 NDK 路径
-          # Android NDK 默认位于 $ANDROID_NDK_LATEST_HOME
+          # 使用 GitHub 官方自带的 NDK 路径
           export TOOLCHAIN=$ANDROID_NDK_LATEST_HOME/toolchains/llvm/prebuilt/linux-x86_64
           export TARGET=aarch64-linux-android33
           export CC=$TOOLCHAIN/bin/$TARGET-clang
           export AR=$TOOLCHAIN/bin/llvm-ar
           export STRIP=$TOOLCHAIN/bin/llvm-strip
 
-          # 配置参数
           ./configure --host=aarch64-linux-android \
                       --prefix=/system \
                       --enable-shared \
@@ -47,19 +51,19 @@ jobs:
           mkdir -p output/lib64
           mkdir -p output/pkgconfig
           
-          # 拷贝库文件（包含带版本号的原始文件）
-          cp .libs/libmount.so* output/lib64/
-          cp .libs/libblkid.so* output/lib64/
-          cp .libs/libuuid.so* output/lib64/
-          cp .libs/libsmartcols.so* output/lib64/
+          # 拷贝库文件（注意：.libs 目录下通常有软链接和真实文件）
+          cp -d .libs/libmount.so* output/lib64/
+          cp -d .libs/libblkid.so* output/lib64/
+          cp -d .libs/libuuid.so* output/lib64/
+          cp -d .libs/libsmartcols.so* output/lib64/
           
-          # 拷贝 pkg-config 文件
+          # 拷贝 pkg-config 文件，方便后续本地开发使用
           cp libmount/libmount.pc output/pkgconfig/
           cp libblkid/libblkid.pc output/pkgconfig/
           cp uuid/libuuid.pc output/pkgconfig/
           
-          # 瘦身
-          $STRIP --strip-unneeded output/lib64/*.so*
+          # 对真实 .so 文件瘦身（跳过软链接）
+          find output/lib64/ -type f -name "*.so*" -exec $STRIP --strip-unneeded {} +
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
