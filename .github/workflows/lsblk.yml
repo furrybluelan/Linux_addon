@@ -1,4 +1,4 @@
-name: Build NDK-Native lsblk (Fixed)
+name: Build NDK-Native lsblk (Ultimate Fix)
 
 on:
   workflow_dispatch:
@@ -23,11 +23,14 @@ jobs:
         with:
           ndk-version: r26b
 
-      - name: Fix NDK Compatibility
+      - name: Patch NDK Missing Functions
         run: |
-          # 针对截图 3446 中的错误，手动注入缺少的 shell 处理函数定义
-          # 这样可以欺骗编译器，避免 "undeclared function" 错误
+          # 修复 getusershell/endusershell (图 3446 报错)
           sed -i '1i #define getusershell() (NULL)\n#define endusershell() ((void)0)' lib/shells.c
+          
+          # 修复 versionsort 缺失 (图 3447 报错)
+          # 在 libmount/src/tab_parse.c 中将 versionsort 替换为通用的 alphasort
+          sed -i 's/versionsort/alphasort/g' libmount/src/tab_parse.c
 
       - name: Configure and Build
         run: |
@@ -35,10 +38,10 @@ jobs:
           
           export TOOLCHAIN=$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64
           export TARGET=aarch64-linux-android
-          export API=29 # 建议使用 29 以获得更好的兼容性
+          export API=29
           
           export CC=$TOOLCHAIN/bin/${TARGET}${API}-clang
-          # 增加忽略警告的参数，防止因 Bionic 的细微差异导致编译中断
+          # 增加编译选项以允许忽略这些非致命的符号差异
           export CFLAGS="-Wno-implicit-function-declaration -Wno-int-conversion"
           export LDFLAGS="-Wl,-rpath=/system/lib64 -Wl,--dynamic-linker=/system/bin/linker64"
 
@@ -59,12 +62,12 @@ jobs:
 
           make lsblk -j$(nproc)
           
-          # 提取并重命名
+          # 提取 ELF 真身并瘦身
           cp .libs/lsblk lsblk
           $TOOLCHAIN/bin/llvm-strip lsblk
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: lsblk-ndk-fixed
+          name: lsblk-ndk-final
           path: lsblk
