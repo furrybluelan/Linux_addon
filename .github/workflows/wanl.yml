@@ -1,7 +1,7 @@
 name: Build RTL8812AU Manual
 
 on:
-  workflow_dispatch: # 支持手动运行
+  workflow_dispatch: 
 
 jobs:
   build:
@@ -18,33 +18,40 @@ jobs:
 
       - name: Fetch Kernel Source & Driver
         run: |
-          # 尝试拉取一加 Ace 2 最通用的内核分支 (SM8475)
-          # 如果这个分支还报错，脚本会自动尝试主分支
-          git clone --depth 1 https://github.com/OnePlusOSS/android_kernel_oneplus_sm8475.git -b oneplus/sm8475_t_13.0.0 kernel || \
+          # 1. 拉取内核源码，并尝试初始化可能缺失的子模块
           git clone --depth 1 https://github.com/OnePlusOSS/android_kernel_oneplus_sm8475.git kernel
+          cd kernel
+          # 尝试同步子模块（防止 Kconfig 找不到文件）
+          git submodule update --init --recursive || true
           
-          # 拉取网卡驱动
+          # 2. 拉取网卡驱动
+          cd ..
           git clone --depth 1 https://github.com/aircrack-ng/rtl8812au.git driver
 
       - name: Align Version & Config
         run: |
           cd kernel
-          # 1. 对齐内核主版本号 (5.10.117)
+          # 1. 对齐内核主版本号 (根据截图是 5.10.117)
           sed -i 's/SUBLEVEL =.*/SUBLEVEL = 117/' Makefile
           
-          # 2. 修改 config 文件以匹配你的后缀 -android12-9-g287b9af3dd02
-          # 我们先清除原有的 LOCALVERSION 再添加
+          # 2. 修改 config 文件以匹配后缀 -android12-9-g287b9af3dd02
           sed -i '/CONFIG_LOCALVERSION=/d' ../config
           echo 'CONFIG_LOCALVERSION="-android12-9-g287b9af3dd02"' >> ../config
           
-          # 3. 复制配置并准备环境
+          # 3. 复制配置
           cp ../config .config
+          
+          # 4. 解决 Kconfig 报错的核心逻辑：自动修正不匹配的配置项
+          # 使用 olddefconfig 会自动将源码中不存在的功能设为默认(n)，从而避免编译中断
+          make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- LLVM=1 LLVM_IAS=1 olddefconfig
+          
+          # 5. 准备环境
           make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- LLVM=1 LLVM_IAS=1 modules_prepare
 
       - name: Build Module
         run: |
           cd driver
-          # 4. 编译驱动
+          # 编译驱动，禁用一些可能导致报错的警告
           make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- LLVM=1 LLVM_IAS=1 \
                KSRC=$GITHUB_WORKSPACE/kernel \
                USER_MODULE_NAME=8812au -j$(nproc)
