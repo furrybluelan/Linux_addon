@@ -1,4 +1,4 @@
-name: Build RTL8812AU Ultimate Fix V4
+name: Build RTL8812AU GCC Edition
 
 on:
   workflow_dispatch: 
@@ -9,20 +9,21 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup Toolchain (AArch64)
+      - name: Setup Toolchain (GCC Focus)
         run: |
           sudo apt-get update
-          sudo apt-get install -y gcc-aarch64-linux-gnu clang lld llvm bc build-essential libelf-dev libssl-dev flex bison
+          # 安装专用的交叉编译工具链
+          sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu bc build-essential libelf-dev libssl-dev flex bison
 
       - name: Fetch Kernel Source & Driver
         run: |
           git clone --depth 1 https://github.com/OnePlusOSS/android_kernel_oneplus_sm8475.git kernel
           git clone --depth 1 https://github.com/aircrack-ng/rtl8812au.git driver
 
-      - name: Nuclear Patch & Version Align
+      - name: Nuclear Patch & Config Align
         run: |
           cd kernel
-          # 1. 递归修复 Kconfig 引用
+          # 1. 递归修复缺失引用
           grep -rE "source \".*\"" . | while read -r line; do
               file_path=$(echo "$line" | cut -d: -f1)
               target_ref=$(echo "$line" | sed -E 's/.*source "(.*)"/\1/')
@@ -36,34 +37,30 @@ jobs:
           sed -i '/CONFIG_LOCALVERSION=/d' ../config
           echo 'CONFIG_LOCALVERSION="-android12-9-g287b9af3dd02"' >> ../config
           
-          # 3. 彻底屏蔽导致卡顿或报错的 GKI 检查项
+          # 3. 剥离 GKI 限制
           sed -i 's/CONFIG_UNUSED_KSYMS_WHITELIST=.*/CONFIG_UNUSED_KSYMS_WHITELIST=""/' ../config
           sed -i 's/CONFIG_ABI_WHITELIST=.*/# CONFIG_ABI_WHITELIST is not set/' ../config
           
           cp ../config .config
-          make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- LLVM=1 LLVM_IAS=1 olddefconfig
+          # 使用 GCC 重新生成配置
+          make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- olddefconfig
 
-      - name: Force Prepare (Silence Errors)
+      - name: GCC Prepare (No Clang Errors)
         run: |
           cd kernel
-          # 核心修正：加入大量的 -Wno 标志，强行压制 atomic_ll_sc.h 的报错
-          export KCFLAGS="-Wno-error -Wno-implicit-function-declaration -Wno-strict-prototypes -Wno-int-conversion -Wno-incompatible-pointer-types -fno-limit-debug-info"
-          make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- LLVM=1 LLVM_IAS=1 \
-               KCFLAGS="$KCFLAGS" \
-               prepare0 -j$(nproc)
+          # 使用 GCC 编译 prepare0。GCC 不会对 atomic_ll_sc.h 报致命错误
+          make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- prepare0 -j$(nproc)
 
-      - name: Build Driver Module
+      - name: Build Driver with GCC
         run: |
           cd driver
-          # 同样给驱动编译加上“减压”标志
-          export KCFLAGS="-Wno-error -Wno-implicit-function-declaration -fno-limit-debug-info"
-          make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- LLVM=1 LLVM_IAS=1 \
+          # 驱动也使用 GCC 编译，确保与内核环境一致
+          make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- \
                KSRC=$GITHUB_WORKSPACE/kernel \
-               KCFLAGS="$KCFLAGS" \
                USER_MODULE_NAME=8812au -j$(nproc)
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: 8812au-ko-final
+          name: 8812au-ko-gcc
           path: driver/8812au.ko
