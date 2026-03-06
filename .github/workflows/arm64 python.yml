@@ -3,7 +3,7 @@ name: Build static Python for Android (arm64)
 on:
   push:
     branches: [ main ]
-  workflow_dispatch:        # 允许手动触发
+  workflow_dispatch:
 
 jobs:
   build:
@@ -38,12 +38,23 @@ jobs:
           echo "TARGET=$TARGET" >> $GITHUB_ENV
           echo "API=$API" >> $GITHUB_ENV
 
+      - name: Create NDK toolchain symlinks for OpenSSL
+        run: |
+          cd $TOOLCHAIN/bin
+          # OpenSSL expects aarch64-linux-android-gcc etc.
+          ln -sf $TARGET$API-clang $TARGET-gcc
+          ln -sf $TARGET$API-clang++ $TARGET-g++
+          ln -sf llvm-ar $TARGET-ar
+          ln -sf llvm-ranlib $TARGET-ranlib
+          # Add to PATH
+          echo "$TOOLCHAIN/bin" >> $GITHUB_PATH
+
       - name: Build OpenSSL (static)
         run: |
           wget https://www.openssl.org/source/openssl-3.0.13.tar.gz
           tar xf openssl-3.0.13.tar.gz
           cd openssl-3.0.13
-          export PATH=$TOOLCHAIN/bin:$PATH
+          # Configure for android-arm64, static only
           ./Configure android-arm64 -D__ANDROID_API__=$API --prefix=$PWD/install no-shared
           make -j$(nproc)
           make install_sw
@@ -83,7 +94,7 @@ jobs:
           cd Python-3.11.6
           export PATH=$TOOLCHAIN/bin:$PATH
 
-          # config.site 预先定义检测结果，避免交叉编译时卡住
+          # config.site to predefine checks
           cat > config.site << 'EOF'
           ac_cv_file__dev_ptc=no
           ac_cv_file__dev_ptmx=no
@@ -130,7 +141,7 @@ jobs:
             --with-system-ffi=no \
             --with-system-expat=no \
             --with-ensurepip=yes \
-            --disable-shared   # 关键：静态链接 libpython，所有模块内置
+            --disable-shared
 
           make -j$(nproc)
           make install
@@ -139,7 +150,6 @@ jobs:
         run: |
           cd Python-3.11.6/install/bin
           $STRIP python3
-          # 打包成 tar.gz，内含一个独立的 python3 文件
           tar -czf $GITHUB_WORKSPACE/python3-android-static.tar.gz python3
 
       - name: Upload artifact
