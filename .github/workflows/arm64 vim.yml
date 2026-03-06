@@ -67,11 +67,12 @@ jobs:
           make install.libs
           echo "NCURSES_DIR=$PWD/install" >> $GITHUB_ENV
 
-      # --- 检测 ncurses 库名（解决 libncursesw.a 或 libncurses.a 差异）---
-      - name: Detect ncurses library name
+      # --- 检测 ncurses 库名并显示详细信息 ---
+      - name: Detect ncurses library and debug
         run: |
           echo "=== NCURSES_DIR/lib contents ==="
           ls -la $NCURSES_DIR/lib
+          echo "=== Searching for ncurses static library ==="
           if [ -f "$NCURSES_DIR/lib/libncursesw.a" ]; then
             echo "Found libncursesw.a"
             echo "NCURSES_LIB_NAME=ncursesw" >> $GITHUB_ENV
@@ -84,6 +85,8 @@ jobs:
             echo "ERROR: No ncurses static library found!"
             exit 1
           fi
+          echo "NCURSES_LIB_NAME=${NCURSES_LIB_NAME}" >> $GITHUB_ENV
+          echo "NCURSES_TLIB=${NCURSES_TLIB}" >> $GITHUB_ENV
 
       # --- 下载 Vim 源码 ---
       - name: Download Vim source
@@ -128,7 +131,14 @@ jobs:
       - name: Compile Vim (static)
         run: |
           cd $VIM_SRC_DIR/src
-          echo "Using library: -l${NCURSES_LIB_NAME}"
+          echo "=== Compile environment ==="
+          echo "NCURSES_LIB_NAME = ${NCURSES_LIB_NAME}"
+          echo "NCURSES_DIR/lib = ${NCURSES_DIR}/lib"
+          echo "LDFLAGS = ${LDFLAGS}"
+          echo "LIBS = -l${NCURSES_LIB_NAME}"
+          echo "=== Checking library existence ==="
+          ls -la ${NCURSES_DIR}/lib/lib${NCURSES_LIB_NAME}.a || echo "Library file missing!"
+          echo "=== Running make ==="
           make -j$(nproc) LDFLAGS="$LDFLAGS -static -pie" LIBS="-l${NCURSES_LIB_NAME}"
           make install
 
