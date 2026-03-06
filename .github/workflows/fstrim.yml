@@ -16,12 +16,12 @@ jobs:
       - name: Install Build Dependencies
         run: |
           sudo apt-get update
-          # 修复 Image 3 的关键：增加 autopoint 和 gettext
+          # 补齐 autopoint 和 gettext，解决 Image 3 的问题
           sudo apt-get install -y autoconf automake libtool pkg-config bison flex wget tar file xz-utils build-essential gettext autopoint
 
       - name: Setup Bootlin Toolchain
         run: |
-          # 解决 Image 2 的连接超时：换用 Bootlin 官方稳定源
+          # 使用最稳的 Bootlin 节点
           wget https://toolchains.bootlin.com/downloads/releases/toolchains/aarch64/tarballs/aarch64--musl--stable-2024.05-1.tar.xz
           tar -xf aarch64--musl--stable-2024.05-1.tar.xz
           echo "$(pwd)/aarch64--musl--stable-2024.05-1/bin" >> $GITHUB_PATH
@@ -30,10 +30,10 @@ jobs:
         run: |
           ./autogen.sh
           
-          # 解决 Image 1 的 Exit 77：使用温和但有效的静态参数
+          # 核心修正：添加 -fno-stack-protector 和 -no-pie 解决 Image 4 的链接错误
           export CC="aarch64-linux-gcc"
-          export CFLAGS="-Os -static"
-          export LDFLAGS="-static"
+          export CFLAGS="-Os -static -fno-stack-protector -no-pie"
+          export LDFLAGS="-static -no-pie"
           
           ./configure --host=aarch64-linux \
                       --disable-shared \
@@ -51,14 +51,18 @@ jobs:
                       --disable-nls \
                       --disable-bash-completion
           
-          make fstrim LDFLAGS="-static"
+          # 编译时再次注入参数确保万无一失
+          make fstrim CFLAGS="-Os -static -fno-stack-protector" LDFLAGS="-static"
+          
+          # 剥离符号信息
           aarch64-linux-strip --strip-all fstrim
           
-          echo "Verification:"
+          echo "Build Success! Verification:"
           file fstrim
+          readelf -d fstrim | grep "NEEDED" || echo "No dynamic dependencies - Truly Static!"
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: fstrim-static-aarch64
+          name: fstrim-ultimate-static
           path: fstrim
