@@ -16,12 +16,12 @@ jobs:
       - name: Install Build Dependencies
         run: |
           sudo apt-get update
-          # 补齐 autopoint 和 gettext，解决 Image 3 的问题
+          # 修复 Image 3：增加 autopoint 和 gettext
           sudo apt-get install -y autoconf automake libtool pkg-config bison flex wget tar file xz-utils build-essential gettext autopoint
 
       - name: Setup Bootlin Toolchain
         run: |
-          # 使用最稳的 Bootlin 节点
+          # 修复 Image 2：使用更稳定的 Bootlin 源
           wget https://toolchains.bootlin.com/downloads/releases/toolchains/aarch64/tarballs/aarch64--musl--stable-2024.05-1.tar.xz
           tar -xf aarch64--musl--stable-2024.05-1.tar.xz
           echo "$(pwd)/aarch64--musl--stable-2024.05-1/bin" >> $GITHUB_PATH
@@ -30,7 +30,9 @@ jobs:
         run: |
           ./autogen.sh
           
-          # 核心修正：添加 -fno-stack-protector 和 -no-pie 解决 Image 4 的链接错误
+          # 修复 Image 4/5 的核心参数：
+          # 1. -fno-stack-protector: 解决 __stack_chk_guard 重定位错误
+          # 2. -no-pie: 解决 stdout 等全局符号的链接错误
           export CC="aarch64-linux-gcc"
           export CFLAGS="-Os -static -fno-stack-protector -no-pie"
           export LDFLAGS="-static -no-pie"
@@ -51,18 +53,19 @@ jobs:
                       --disable-nls \
                       --disable-bash-completion
           
-          # 编译时再次注入参数确保万无一失
-          make fstrim CFLAGS="-Os -static -fno-stack-protector" LDFLAGS="-static"
+          # 编译阶段再次注入参数，防止 configure 覆盖
+          make fstrim CFLAGS="-Os -static -fno-stack-protector" LDFLAGS="-static -no-pie"
           
-          # 剥离符号信息
+          # 裁剪二进制文件
           aarch64-linux-strip --strip-all fstrim
           
-          echo "Build Success! Verification:"
+          echo "Build Finished! Verification:"
           file fstrim
-          readelf -d fstrim | grep "NEEDED" || echo "No dynamic dependencies - Truly Static!"
+          # 检查是否有动态依赖，如果没有输出则说明是全静态
+          readelf -d fstrim | grep "NEEDED" || echo "RESULT: Truly Static Binary!"
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: fstrim-ultimate-static
+          name: fstrim-ultimate-fixed
           path: fstrim
