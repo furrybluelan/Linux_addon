@@ -67,26 +67,29 @@ jobs:
           make install.libs
           echo "NCURSES_DIR=$PWD/install" >> $GITHUB_ENV
 
-      # --- 检测 ncurses 库名并显示详细信息 ---
-      - name: Detect ncurses library and debug
+      # --- 检测 ncurses 库名并验证 tgetent 符号 ---
+      - name: Detect ncurses library and verify
         run: |
           echo "=== NCURSES_DIR/lib contents ==="
           ls -la $NCURSES_DIR/lib
           echo "=== Searching for ncurses static library ==="
           if [ -f "$NCURSES_DIR/lib/libncursesw.a" ]; then
             echo "Found libncursesw.a"
-            echo "NCURSES_LIB_NAME=ncursesw" >> $GITHUB_ENV
-            echo "NCURSES_TLIB=ncursesw" >> $GITHUB_ENV
+            LIB_NAME="ncursesw"
           elif [ -f "$NCURSES_DIR/lib/libncurses.a" ]; then
             echo "Found libncurses.a"
-            echo "NCURSES_LIB_NAME=ncurses" >> $GITHUB_ENV
-            echo "NCURSES_TLIB=ncurses" >> $GITHUB_ENV
+            LIB_NAME="ncurses"
           else
             echo "ERROR: No ncurses static library found!"
             exit 1
           fi
-          echo "NCURSES_LIB_NAME=${NCURSES_LIB_NAME}" >> $GITHUB_ENV
-          echo "NCURSES_TLIB=${NCURSES_TLIB}" >> $GITHUB_ENV
+          echo "NCURSES_LIB_NAME=$LIB_NAME" >> $GITHUB_ENV
+          echo "=== Checking for tgetent symbol in library ==="
+          if $AR t "$NCURSES_DIR/lib/lib${LIB_NAME}.a" | grep -q "tgetent"; then
+            echo "tgetent found in library."
+          else
+            echo "WARNING: tgetent not found in library, but may be in termlib component."
+          fi
 
       # --- 下载 Vim 源码 ---
       - name: Download Vim source
@@ -100,6 +103,7 @@ jobs:
           cd $VIM_SRC_DIR/src
           export CPPFLAGS="-I$NCURSES_DIR/include -I$NCURSES_DIR/include/ncursesw"
           export LDFLAGS="-L$NCURSES_DIR/lib"
+          export LIBS="-l${NCURSES_LIB_NAME}"
           export CFLAGS="-fPIE -O2"
 
           # 交叉编译必需的缓存变量
@@ -124,7 +128,7 @@ jobs:
             --disable-farsi \
             --disable-libsodium \
             --enable-multibyte \
-            --with-tlib=$NCURSES_TLIB \
+            --with-tlib=$NCURSES_LIB_NAME \
             --prefix=$PWD/install
 
       # --- 编译 Vim（静态链接）---
@@ -133,12 +137,8 @@ jobs:
           cd $VIM_SRC_DIR/src
           echo "=== Compile environment ==="
           echo "NCURSES_LIB_NAME = ${NCURSES_LIB_NAME}"
-          echo "NCURSES_DIR/lib = ${NCURSES_DIR}/lib"
-          echo "LDFLAGS = ${LDFLAGS}"
+          echo "LDFLAGS = ${LDFLAGS} -static -pie"
           echo "LIBS = -l${NCURSES_LIB_NAME}"
-          echo "=== Checking library existence ==="
-          ls -la ${NCURSES_DIR}/lib/lib${NCURSES_LIB_NAME}.a || echo "Library file missing!"
-          echo "=== Running make ==="
           make -j$(nproc) LDFLAGS="$LDFLAGS -static -pie" LIBS="-l${NCURSES_LIB_NAME}"
           make install
 
