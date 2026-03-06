@@ -27,7 +27,6 @@ jobs:
 
           echo "$TOOLCHAIN" >> $GITHUB_PATH
 
-          # Export compiler variables
           echo "TARGET=$TARGET" >> $GITHUB_ENV
           echo "API=$API" >> $GITHUB_ENV
           echo "CC=$TARGET$API-clang" >> $GITHUB_ENV
@@ -76,7 +75,6 @@ jobs:
         run: |
           cd $NCURSES_SRC_DIR
           make distclean || true
-          # 配置时只传递必要的 CFLAGS（不设置 LDFLAGS，避免影响编译器测试）
           ./configure \
             --host=$TARGET \
             --prefix=$PWD/install \
@@ -90,7 +88,6 @@ jobs:
             --with-default-terminfo-dir=/system/etc/terminfo \
             CFLAGS="-fPIE"
           make -j$(nproc)
-          # 只安装库和 terminfo 数据，跳过可执行程序（避免交叉编译时无法运行 tic）
           make install.libs install.data
           echo "NCURSES_DIR=$PWD/install" >> $GITHUB_ENV
 
@@ -101,12 +98,11 @@ jobs:
           SRC_DIR=$(tar tf nano-*.tar.xz | head -1 | cut -d/ -f1)
           echo "NANO_SRC_DIR=$PWD/$SRC_DIR" >> $GITHUB_ENV
 
-      - name: Configure and compile nano (static)
+      - name: Configure nano (without static link flags)
         run: |
           cd $NANO_SRC_DIR
-          # 设置完全静态链接的编译标志
           export CFLAGS="-fPIE -O2 -I$NCURSES_DIR/include"
-          export LDFLAGS="-pie -static -L$NCURSES_DIR/lib"
+          export LDFLAGS="-L$NCURSES_DIR/lib"   # 仅传递库路径，不添加 -pie -static
           export LIBS="-lncursesw -ltinfo"
 
           ./configure \
@@ -124,7 +120,11 @@ jobs:
             NCURSES_LIBS="-lncursesw" \
             ac_cv_func_setenv=yes
 
-          make -j$(nproc)
+      - name: Compile nano (static)
+        run: |
+          cd $NANO_SRC_DIR
+          # 在编译时添加静态链接和PIE标志
+          make -j$(nproc) LDFLAGS="$LDFLAGS -pie -static"
           make install
 
       - name: Strip and package
