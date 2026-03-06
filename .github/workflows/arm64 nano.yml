@@ -138,6 +138,18 @@ jobs:
             exit 1
           fi
 
+      - name: Locate terminfo directory
+        id: locate_terminfo
+        run: |
+          echo "=== Searching for terminfo directory under $NCURSES_DIR ==="
+          TERMINFO_PATH=$(find "$NCURSES_DIR" -type d -name terminfo | head -n1)
+          if [ -z "$TERMINFO_PATH" ]; then
+            echo "ERROR: Could not find terminfo directory"
+            exit 1
+          fi
+          echo "Found terminfo at: $TERMINFO_PATH"
+          echo "TERMINFO_PATH=$TERMINFO_PATH" >> $GITHUB_ENV
+
       - name: Download and extract nano
         run: |
           wget "${{ steps.nano.outputs.url }}"
@@ -180,15 +192,9 @@ jobs:
           # Create output directory
           mkdir -p $GITHUB_WORKSPACE/nano-android/terminfo
 
-          # terminfo directory should be in NCURSES_DIR/share/terminfo
-          TERMINFO_SRC="$NCURSES_DIR/share/terminfo"
-          if [ ! -d "$TERMINFO_SRC" ]; then
-            echo "ERROR: terminfo directory not found at $TERMINFO_SRC"
-            exit 1
-          fi
-
-          echo "Copying terminfo from $TERMINFO_SRC"
-          cp -r "$TERMINFO_SRC"/. $GITHUB_WORKSPACE/nano-android/terminfo/
+          # Copy terminfo from detected location
+          echo "Copying terminfo from $TERMINFO_PATH"
+          cp -r "$TERMINFO_PATH"/* $GITHUB_WORKSPACE/nano-android/terminfo/
 
           cp nano $GITHUB_WORKSPACE/nano-android/
           cd $GITHUB_WORKSPACE/nano-android
