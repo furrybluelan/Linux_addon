@@ -16,12 +16,12 @@ jobs:
       - name: Install Build Dependencies
         run: |
           sudo apt-get update
-          # 修复 Image 3：补齐构建必须的 autopoint 和 gettext
+          # 修复 Image 3：补齐构建组件
           sudo apt-get install -y autoconf automake libtool pkg-config bison flex wget tar file xz-utils build-essential gettext autopoint
 
       - name: Setup Bootlin Toolchain
         run: |
-          # 修复 Image 2：使用最稳的 Bootlin 官方节点
+          # 修复 Image 2：换用稳定的 Bootlin 官方源
           wget https://toolchains.bootlin.com/downloads/releases/toolchains/aarch64/tarballs/aarch64--musl--stable-2024.05-1.tar.xz
           tar -xf aarch64--musl--stable-2024.05-1.tar.xz
           echo "$(pwd)/aarch64--musl--stable-2024.05-1/bin" >> $GITHUB_PATH
@@ -30,14 +30,14 @@ jobs:
         run: |
           ./autogen.sh
           
-          # 针对 Image 4/5/7/8 的核心修复参数：
-          # 1. -fno-stack-protector: 杀掉那个让链接器报错的 __stack_chk_guard
-          # 2. -no-pie: 彻底断绝文件对外部链接器的念想，解决“No such file”
-          # 3. -all-static: 给链接器下死命令，必须全静态
+          # 核心修正：
+          # 1. -fno-stack-protector: 解决 Image 4 的 __stack_chk_guard 报错
+          # 2. -no-pie: 彻底解决重定位冲突，这是 Android 运行成功的关键
           export CC="aarch64-linux-gcc"
           export CFLAGS="-Os -static -fno-stack-protector -no-pie"
           export LDFLAGS="-static -static-libgcc -no-pie"
           
+          # --disable-shared 是核心，强制不生成动态库
           ./configure --host=aarch64-linux \
                       --disable-shared \
                       --enable-static \
@@ -54,24 +54,23 @@ jobs:
                       --disable-nls \
                       --disable-bash-completion
           
-          # 强制注入参数进行最终编译
-          make fstrim CFLAGS="-Os -static -fno-stack-protector" LDFLAGS="-static -no-pie"
+          # 暴力注入：直接给 make 传参，防止它反悔编成动态的
+          make fstrim LDFLAGS="-all-static" CFLAGS="-Os -static -fno-stack-protector -no-pie"
           
-          # 裁剪文件减小体积
           aarch64-linux-strip --strip-all fstrim
           
-          # 关键验证环节：检查是否真的没有动态依赖
-          echo "Build Finished! Verification:"
+          # 最终校验：这次如果还有 interpreter，脚本会直接报错停止
+          echo "================ Verification ================"
           file fstrim
-          if readelf -l fstrim | grep -q "program interpreter"; then
-            echo "ERROR: Binary is still dynamic! Check logs."
+          if readelf -l fstrim | grep -q "interpreter"; then
+            echo "FAILED: Binary is STILL dynamic! Interpreter found."
             exit 1
           else
-            echo "SUCCESS: Truly static binary detected!"
+            echo "SUCCESS: Truly static binary created!"
           fi
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: fstrim-fixed-static
+          name: fstrim-final-static
           path: fstrim
