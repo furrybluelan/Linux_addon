@@ -1,4 +1,4 @@
-name: Build static Vim for Android (arm64) - latest version
+name: Build static Vim binary for Android (arm64) only
 
 on:
   workflow_dispatch:
@@ -32,7 +32,7 @@ jobs:
           echo "STRIP=$BIN_DIR/llvm-strip" >> $GITHUB_ENV
           echo "TARGET=$TARGET" >> $GITHUB_ENV
 
-      # --- 获取最新版本（带后备方案）---
+      # --- 获取最新版本 ---
       - name: Get latest ncurses version
         id: ncurses
         run: |
@@ -42,7 +42,6 @@ jobs:
       - name: Get latest Vim version
         id: vim
         run: |
-          # 尝试从 GitHub API 获取最新标签
           LATEST_TAG=$(curl -s https://api.github.com/repos/vim/vim/releases/latest | grep -oP '"tag_name": "\K[^"]+' || true)
           if [ -z "$LATEST_TAG" ]; then
             echo "GitHub API failed, using fallback version v9.1.0"
@@ -57,7 +56,6 @@ jobs:
         run: |
           wget ftp://ftp.gnu.org/gnu/ncurses/ncurses-${{ steps.ncurses.outputs.version }}.tar.gz
           tar xf ncurses-*.tar.gz
-          # 获取准确的源码目录名（避免通配符歧义）
           SRC_DIR=$(tar tf ncurses-*.tar.gz | head -1 | cut -d/ -f1)
           cd $SRC_DIR
           ./configure --host=$TARGET --prefix=$PWD/install \
@@ -69,16 +67,7 @@ jobs:
           make install.libs
           echo "NCURSES_DIR=$PWD/install" >> $GITHUB_ENV
 
-      # --- 下载预编译 terminfo（来自 Termux）---
-      - name: Download prebuilt terminfo from Termux
-        run: |
-          wget https://packages.termux.org/apt/termux-main/pool/main/n/ncurses/ncurses_6.4-1_aarch64.deb
-          ar x ncurses_*.deb
-          tar xf data.tar.xz
-          mkdir -p terminfo
-          cp -r ./data/data/com.termux/files/usr/share/terminfo/* terminfo/
-
-      # --- 下载 Vim 源码（使用检测到的标签）---
+      # --- 下载 Vim 源码 ---
       - name: Download Vim source
         run: |
           git clone --branch ${{ steps.vim.outputs.tag }} --depth 1 https://github.com/vim/vim.git
@@ -115,20 +104,19 @@ jobs:
           make -j$(nproc) LDFLAGS="$LDFLAGS -static -pie" LIBS="-lncursesw"
           make install
 
-      # --- 打包产物 ---
-      - name: Package final artifact
+      # --- 打包二进制文件 ---
+      - name: Package vim binary
         run: |
           mkdir -p output
           cp $VIM_SRC_DIR/src/install/bin/vim output/
-          cp -r terminfo output/
           cd output
           $STRIP vim
           echo "=== Checking linked libraries (should only show system libs) ==="
           readelf -d vim | grep NEEDED || true
-          tar -czf $GITHUB_WORKSPACE/vim-android-static.tar.gz *
+          tar -czf $GITHUB_WORKSPACE/vim-android-binary-only.tar.gz vim
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: vim-android-static-latest
-          path: vim-android-static.tar.gz
+          name: vim-android-binary-only
+          path: vim-android-binary-only.tar.gz
