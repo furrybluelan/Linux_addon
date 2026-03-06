@@ -16,12 +16,12 @@ jobs:
       - name: Install Build Dependencies
         run: |
           sudo apt-get update
-          # 修复 Image 3：增加 autopoint 和 gettext
+          # 修复 Image 3：补齐构建必须的 autopoint 和 gettext
           sudo apt-get install -y autoconf automake libtool pkg-config bison flex wget tar file xz-utils build-essential gettext autopoint
 
       - name: Setup Bootlin Toolchain
         run: |
-          # 修复 Image 2：使用更稳定的 Bootlin 源
+          # 修复 Image 2：换用最稳定的 Bootlin 官方源
           wget https://toolchains.bootlin.com/downloads/releases/toolchains/aarch64/tarballs/aarch64--musl--stable-2024.05-1.tar.xz
           tar -xf aarch64--musl--stable-2024.05-1.tar.xz
           echo "$(pwd)/aarch64--musl--stable-2024.05-1/bin" >> $GITHUB_PATH
@@ -31,8 +31,8 @@ jobs:
           ./autogen.sh
           
           # 修复 Image 4/5 的核心参数：
-          # 1. -fno-stack-protector: 解决 __stack_chk_guard 重定位错误
-          # 2. -no-pie: 解决 stdout 等全局符号的链接错误
+          # 1. -fno-stack-protector: 解决 __stack_chk_guard 重定位报错
+          # 2. -no-pie: 解决 stdout 等全局符号的链接冲突，确保真静态
           export CC="aarch64-linux-gcc"
           export CFLAGS="-Os -static -fno-stack-protector -no-pie"
           export LDFLAGS="-static -no-pie"
@@ -53,19 +53,20 @@ jobs:
                       --disable-nls \
                       --disable-bash-completion
           
-          # 编译阶段再次注入参数，防止 configure 覆盖
+          # 编译阶段强制注入参数
           make fstrim CFLAGS="-Os -static -fno-stack-protector" LDFLAGS="-static -no-pie"
           
-          # 裁剪二进制文件
+          # 裁剪二进制文件减小体积
           aarch64-linux-strip --strip-all fstrim
           
+          # 验证结果
           echo "Build Finished! Verification:"
           file fstrim
-          # 检查是否有动态依赖，如果没有输出则说明是全静态
-          readelf -d fstrim | grep "NEEDED" || echo "RESULT: Truly Static Binary!"
+          # 如果 readelf 没有任何输出，说明这才是真正的静态二进制文件
+          readelf -d fstrim | grep "NEEDED" || echo "RESULT: Truly Static Binary for Android!"
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: fstrim-ultimate-fixed
+          name: fstrim-fixed-static
           path: fstrim
