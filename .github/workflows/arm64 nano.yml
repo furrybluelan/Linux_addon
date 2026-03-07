@@ -75,6 +75,11 @@ jobs:
           make install.libs
           echo "NCURSES_DIR=$PWD/install" >> $GITHUB_ENV
 
+      - name: Debug - list ncurses libs
+        run: |
+          echo "NCURSES_DIR=$NCURSES_DIR"
+          ls -la $NCURSES_DIR/lib
+
       - name: Download nano source
         run: |
           wget "${{ steps.nano.outputs.url }}"
@@ -100,7 +105,8 @@ jobs:
       - name: Compile nano
         run: |
           cd $NANO_SRC_DIR
-          make -j$(nproc) LDFLAGS="$LDFLAGS -pie" LIBS="-lncursesw -lm"
+          # 使用完整路径链接动态库，确保链接器找到
+          make -j$(nproc) LDFLAGS="-L$NCURSES_DIR/lib -pie" LIBS="$NCURSES_DIR/lib/libncursesw.so -lm"
           make install
 
       - name: Package nano with libraries
@@ -110,7 +116,7 @@ jobs:
           cp $NCURSES_DIR/lib/libncursesw.so* output/
           cd output
           $STRIP nano
-          $STRIP libncursesw.so*
+          $STRIP libncursesw.so* || true
           tar -czf $GITHUB_WORKSPACE/nano-android-dynamic.tar.gz *
 
       - name: Upload artifact
