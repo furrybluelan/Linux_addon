@@ -1,4 +1,4 @@
-name: Build static nano binary for Android (arm64) only
+name: Build static nano binary for Android (arm64) with TLS fix
 
 on:
   workflow_dispatch:
@@ -32,6 +32,7 @@ jobs:
           echo "RANLIB=$BIN_DIR/llvm-ranlib" >> $GITHUB_ENV
           echo "STRIP=$BIN_DIR/llvm-strip" >> $GITHUB_ENV
           echo "TARGET=$TARGET" >> $GITHUB_ENV
+          echo "API=$API" >> $GITHUB_ENV
 
       # --- 获取最新 ncurses 版本 ---
       - name: Get latest ncurses version
@@ -120,23 +121,27 @@ jobs:
             --disable-nls \
             --disable-speller
 
-      # --- 编译 nano（静态链接 + 增强 TLS 对齐修复）---
+      # --- 编译 nano（静态链接 + TLS 对齐修复）---
       - name: Compile nano (static)
         run: |
           cd $NANO_SRC_DIR
-          # 增强的链接器选项
-          export EXTRA_LDFLAGS="-Wl,-z,max-page-size=0x1000 -Wl,-z,common-page-size=0x1000 -Wl,--no-rosegment -Wl,-z,separate-loadable-segments -Wl,-z,relro,-z,now -Wl,--hash-style=gnu -Wl,--no-undefined"
+          # 增强的链接器选项以强制 TLS 对齐
+          EXTRA_LDFLAGS="-Wl,-z,max-page-size=0x1000 -Wl,-z,common-page-size=0x1000 -Wl,--no-rosegment -Wl,-z,separate-loadable-segments"
           make -j$(nproc) LDFLAGS="-L$NCURSES_DIR/lib -static -pie $EXTRA_LDFLAGS" LIBS="$NCURSES_LIB_PATH -lm"
           make install
 
-      # --- 检查 TLS 段对齐 ---
+      # --- 检查 TLS 段对齐（过滤警告）---
       - name: Check TLS alignment
         run: |
           cd $NANO_SRC_DIR/install/bin
-          echo "=== Checking TLS segment alignment ==="
-          readelf -l nano | grep -A5 TLS || echo "No TLS segment found"
-          ALIGN=$(readelf -l nano | grep -A5 TLS | grep -o '0x[0-9a-f]*$' | head -1)
-          if [ "$ALIGN" != "0x40" ] && [ "$ALIGN" != "64" ]; then
+          echo "=== Checking TLS segment alignment (warnings filtered) ==="
+          # 显示 TLS 段相关信息，屏蔽 stderr 警告
+          readelf -l nano 2>/dev/null | grep -A5 TLS || echo "No TLS segment found"
+          # 提取对齐值
+          ALIGN=$(readelf -l nano 2>/dev/null | grep -A5 TLS | grep -o '0x[0-9a-f]*$' | head -1)
+          if [ -z "$ALIGN" ]; then
+            echo "Could not determine TLS alignment."
+          elif [ "$ALIGN" != "0x40" ]; then
             echo "⚠️  TLS alignment is $ALIGN, expected 0x40 (64). Binary may not run on Android!"
           else
             echo "✅ TLS alignment OK ($ALIGN)."
@@ -150,7 +155,7 @@ jobs:
           cd output
           $STRIP nano
           echo "=== Checking linked libraries (should only show system libs) ==="
-          readelf -d nano | grep NEEDED || true
+          readelf -d nano 2>/dev/null | grep NEEDED || true
           tar -czf $GITHUB_WORKSPACE/nano-android-static.tar.gz nano
 
       - name: Upload artifact
