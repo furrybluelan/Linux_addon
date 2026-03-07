@@ -147,6 +147,7 @@ jobs:
             --prefix=$PWD/install \
             --without-zenmap \
             --without-nmap-update \
+            --without-nping \
             --without-libssh \
             --without-pcre \
             --without-liblinear \
@@ -163,11 +164,17 @@ jobs:
           rm -rf $NMAP_SRC_DIR/libpcre
           rm -rf $NMAP_SRC_DIR/libssh2
           rm -rf $NMAP_SRC_DIR/liblinear
+          rm -rf $NMAP_SRC_DIR/nping
 
       - name: Compile nmap (static) with verbose output
         run: |
           cd $NMAP_SRC_DIR
-          make -j$(nproc) V=1 LDFLAGS="$LDFLAGS -static -pie -Wl,-z,max-page-size=0x1000 -Wl,-z,common-page-size=0x1000" LIBS="-llua -lpcap -lssl -lcrypto -lm"
+          # 使用单线程编译，便于看清错误
+          make -j1 V=1 LDFLAGS="$LDFLAGS -static -pie -Wl,-z,max-page-size=0x1000 -Wl,-z,common-page-size=0x1000" LIBS="-llua -lpcap -lssl -lcrypto -lm" || {
+            echo "=== Compilation failed. Displaying last 50 lines of config.log and make output ==="
+            tail -50 config.log
+            exit 1
+          }
           make install
 
       - name: Strip and package
