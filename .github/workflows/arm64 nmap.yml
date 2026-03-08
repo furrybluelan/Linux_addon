@@ -5,69 +5,47 @@ jobs:
   build:
     runs-on: ubuntu-22.04
     steps:
-      - name: Install system dependencies
-        run: sudo apt update && sudo apt install -y make wget curl
-      - name: Download Android NDK
-        run: |
+      - run: sudo apt update && sudo apt install -y make wget curl
+      - run: |
           wget https://dl.google.com/android/repository/android-ndk-r25c-linux.zip
           unzip android-ndk-r25c-linux.zip
           echo "NDK_PATH=${PWD}/android-ndk-r25c" >> $GITHUB_ENV
-      - name: Set up NDK environment
-        run: |
+      - run: |
           TOOLCHAIN=$NDK_PATH/toolchains/llvm/prebuilt/linux-x86_64
-          TARGET=aarch64-linux-android; API=21; BIN_DIR=$TOOLCHAIN/bin
-          echo "$BIN_DIR" >> $GITHUB_PATH
+          TARGET=aarch64-linux-android; API=21
+          echo "$TOOLCHAIN/bin" >> $GITHUB_PATH
+          echo "CC=$TOOLCHAIN/bin/clang --target=$TARGET$API --sysroot=$TOOLCHAIN/sysroot" >> $GITHUB_ENV
+          echo "CXX=$TOOLCHAIN/bin/clang++ --target=$TARGET$API --sysroot=$TOOLCHAIN/sysroot" >> $GITHUB_ENV
+          echo "AR=$TOOLCHAIN/bin/llvm-ar" >> $GITHUB_ENV
+          echo "RANLIB=$TOOLCHAIN/bin/llvm-ranlib" >> $GITHUB_ENV
+          echo "STRIP=$TOOLCHAIN/bin/llvm-strip" >> $GITHUB_ENV
           echo "TARGET=$TARGET" >> $GITHUB_ENV; echo "API=$API" >> $GITHUB_ENV
-          echo "CC=$BIN_DIR/clang --target=$TARGET$API --sysroot=$TOOLCHAIN/sysroot" >> $GITHUB_ENV
-          echo "CXX=$BIN_DIR/clang++ --target=$TARGET$API --sysroot=$TOOLCHAIN/sysroot" >> $GITHUB_ENV
-          echo "AR=$BIN_DIR/llvm-ar" >> $GITHUB_ENV
-          echo "RANLIB=$BIN_DIR/llvm-ranlib" >> $GITHUB_ENV
-          echo "STRIP=$BIN_DIR/llvm-strip" >> $GITHUB_ENV
-          echo "TOOLCHAIN=$TOOLCHAIN" >> $GITHUB_ENV
-      - name: Get latest OpenSSL version
-        id: openssl
-        run: |
-          VERSION=$(curl -s https://www.openssl.org/source/ | grep -oP 'openssl-3\.0\.\d+' | sort -V | tail -n1 | sed 's/openssl-//')
-          echo "version=${VERSION:-3.0.13}" >> $GITHUB_OUTPUT
-      - name: Get latest libpcap version
-        id: libpcap
-        run: |
-          VERSION=$(curl -s https://www.tcpdump.org/release/ | grep -oP 'libpcap-1\.10\.\d+' | sort -V | tail -n1 | sed 's/libpcap-//')
-          echo "version=${VERSION:-1.10.4}" >> $GITHUB_OUTPUT
-      - name: Get latest Lua version
-        id: lua
-        run: |
-          VERSION=$(curl -s https://www.lua.org/ftp/ | grep -oP 'lua-5\.4\.\d+' | sort -V | tail -n1 | sed 's/lua-//')
-          echo "version=${VERSION:-5.4.6}" >> $GITHUB_OUTPUT
-      - name: Get latest PCRE version
-        id: pcre
-        run: |
-          VERSION=$(curl -s https://ftp.pcre.org/pub/pcre/ | grep -oP 'pcre-8\.\d+' | sort -V | tail -n1 | sed 's/pcre-//')
-          echo "version=${VERSION:-8.45}" >> $GITHUB_OUTPUT
-      - name: Get latest nmap version
-        id: nmap
-        run: |
-          VERSION=$(curl -s https://nmap.org/dist/ | grep -oP 'nmap-7\.\d+' | sort -V | tail -n1 | sed 's/nmap-//')
-          echo "version=${VERSION:-7.95}" >> $GITHUB_OUTPUT
-      - name: Build OpenSSL (static)
-        run: |
+      - id: openssl
+        run: VERSION=$(curl -s https://www.openssl.org/source/ | grep -oP 'openssl-3\.0\.\d+' | sort -V | tail -n1 | sed 's/openssl-//'); echo "version=${VERSION:-3.0.13}" >> $GITHUB_OUTPUT
+      - id: libpcap
+        run: VERSION=$(curl -s https://www.tcpdump.org/release/ | grep -oP 'libpcap-1\.10\.\d+' | sort -V | tail -n1 | sed 's/libpcap-//'); echo "version=${VERSION:-1.10.4}" >> $GITHUB_OUTPUT
+      - id: lua
+        run: VERSION=$(curl -s https://www.lua.org/ftp/ | grep -oP 'lua-5\.4\.\d+' | sort -V | tail -n1 | sed 's/lua-//'); echo "version=${VERSION:-5.4.6}" >> $GITHUB_OUTPUT
+      - id: pcre
+        run: VERSION=$(curl -s https://ftp.pcre.org/pub/pcre/ | grep -oP 'pcre-8\.\d+' | sort -V | tail -n1 | sed 's/pcre-//'); echo "version=${VERSION:-8.45}" >> $GITHUB_OUTPUT
+      - id: nmap
+        run: VERSION=$(curl -s https://nmap.org/dist/ | grep -oP 'nmap-7\.\d+' | sort -V | tail -n1 | sed 's/nmap-//'); echo "version=${VERSION:-7.95}" >> $GITHUB_OUTPUT
+      - run: |
           export ANDROID_NDK_ROOT=$NDK_PATH; export PATH=$TOOLCHAIN/bin:$PATH
           VER=${{ steps.openssl.outputs.version }}
           wget https://www.openssl.org/source/openssl-$VER.tar.gz
           tar xf openssl-$VER.tar.gz; cd openssl-$VER
           ./Configure android-arm64 -D__ANDROID_API__=$API --prefix=$PWD/install no-shared
           make -j$(nproc); make install_sw
-          echo "OPENSSL_DIR=$PWD/install" >> $GITHUB_ENV; cd ..
-      - name: Build libpcap (static)
-        run: |
+          echo "OPENSSL_DIR=$PWD/install" >> $GITHUB_ENV
+      - run: |
           VER=${{ steps.libpcap.outputs.version }}
           wget https://www.tcpdump.org/release/libpcap-$VER.tar.gz
           tar xf libpcap-$VER.tar.gz; cd libpcap-$VER
           ./configure --host=$TARGET --prefix=$PWD/install --disable-shared --enable-static
           make -j$(nproc); make install
-          echo "LIBPCAP_DIR=$PWD/install" >> $GITHUB_ENV; cd ..
-      - name: Build Lua (static)
-        run: |
+          echo "LIBPCAP_DIR=$PWD/install" >> $GITHUB_ENV
+      - run: |
           VER=${{ steps.lua.outputs.version }}
           wget https://www.lua.org/ftp/lua-$VER.tar.gz
           tar xf lua-$VER.tar.gz; cd lua-$VER/src
@@ -75,50 +53,40 @@ jobs:
           $AR rcu liblua.a *.o; $RANLIB liblua.a
           mkdir -p $PWD/../install/include $PWD/../install/lib
           cp *.h $PWD/../install/include/; cp liblua.a $PWD/../install/lib/
-          echo "LUA_DIR=$PWD/../install" >> $GITHUB_ENV; cd ../..
-      - name: Build PCRE (static)
-        run: |
+          echo "LUA_DIR=$PWD/../install" >> $GITHUB_ENV
+      - run: |
           VER=${{ steps.pcre.outputs.version }}
           wget https://sourceforge.net/projects/pcre/files/pcre/$VER/pcre-$VER.tar.bz2/download -O pcre-$VER.tar.bz2
           tar xf pcre-$VER.tar.bz2; cd pcre-$VER
           ./configure --host=$TARGET --prefix=$PWD/install --disable-shared --enable-static --disable-cpp --disable-pcregrep-libz --disable-pcregrep-libbz2
           make -j$(nproc); make install
-          echo "PCRE_DIR=$PWD/install" >> $GITHUB_ENV; cd ..
-      - name: Download nmap source
-        run: |
+          echo "PCRE_DIR=$PWD/install" >> $GITHUB_ENV
+      - run: |
           VER=${{ steps.nmap.outputs.version }}
           wget https://nmap.org/dist/nmap-$VER.tar.bz2
           tar xf nmap-$VER.tar.bz2
           echo "NMAP_SRC_DIR=$PWD/nmap-$VER" >> $GITHUB_ENV
-      - name: Remove internal libraries
-        run: |
-          rm -rf $NMAP_SRC_DIR/liblua $NMAP_SRC_DIR/libpcre $NMAP_SRC_DIR/libssh2 $NMAP_SRC_DIR/liblinear $NMAP_SRC_DIR/nping
-      - name: Check static libraries
-        run: |
-          [ -f "$OPENSSL_DIR/lib/libssl.a" ] && [ -f "$OPENSSL_DIR/lib/libcrypto.a" ] || { echo "OpenSSL lib missing"; exit 1; }
-          [ -f "$LIBPCAP_DIR/lib/libpcap.a" ] || { echo "libpcap missing"; exit 1; }
-          [ -f "$LUA_DIR/lib/liblua.a" ] || { echo "Lua missing"; exit 1; }
-          [ -f "$PCRE_DIR/lib/libpcre.a" ] || { echo "PCRE missing"; exit 1; }
-      - name: Configure nmap
-        run: |
+      - run: rm -rf $NMAP_SRC_DIR/liblua $NMAP_SRC_DIR/libpcre $NMAP_SRC_DIR/libssh2 $NMAP_SRC_DIR/liblinear $NMAP_SRC_DIR/nping
+      - run: |
+          [ -f "$OPENSSL_DIR/lib/libssl.a" ] || { echo "OpenSSL libssl.a missing"; exit 1; }
+          [ -f "$LIBPCAP_DIR/lib/libpcap.a" ] || { echo "libpcap.a missing"; exit 1; }
+          [ -f "$LUA_DIR/lib/liblua.a" ] || { echo "liblua.a missing"; exit 1; }
+          [ -f "$PCRE_DIR/lib/libpcre.a" ] || { echo "libpcre.a missing"; exit 1; }
+      - run: |
           cd $NMAP_SRC_DIR
           export CPPFLAGS="-I$OPENSSL_DIR/include -I$LIBPCAP_DIR/include -I$LUA_DIR/include -I$PCRE_DIR/include"
           export LDFLAGS="-L$OPENSSL_DIR/lib -L$LIBPCAP_DIR/lib -L$LUA_DIR/lib -L$PCRE_DIR/lib"
           export ac_cv_func_malloc_0_nonnull=yes ac_cv_func_realloc_0_nonnull=yes lt_cv_sys_max_cmd_len=32768
           export CFLAGS="-fPIE -O2"
           ./configure --host=$TARGET --build=x86_64-linux-gnu --prefix=$PWD/install --without-zenmap --without-nmap-update --without-nping --without-libssh --without-libssh2 --without-liblinear --without-dnet --with-pcap=linux --with-openssl=$OPENSSL_DIR --with-liblua=$LUA_DIR --with-libpcap=$LIBPCAP_DIR --with-pcre=$PCRE_DIR --enable-static --disable-shared
-      - name: Compile nmap
-        run: |
+      - run: |
           cd $NMAP_SRC_DIR
-          make -j1 V=1 LDFLAGS="$LDFLAGS -static -pie -Wl,-z,max-page-size=0x1000 -Wl,-z,common-page-size=0x1000" LIBS="-llua -lpcap -lpcre -lssl -lcrypto -lm" || { echo "=== make failed, showing last 100 lines of config.log ==="; tail -100 config.log; exit 1; }
+          make -j1 V=1 LDFLAGS="$LDFLAGS -static -pie -Wl,-z,max-page-size=0x1000 -Wl,-z,common-page-size=0x1000" LIBS="-llua -lpcap -lpcre -lssl -lcrypto -lm" || { tail -100 config.log; exit 1; }
           make install
-      - name: Strip and package
-        run: |
+      - run: |
           cd $NMAP_SRC_DIR/install/bin
-          $STRIP nmap; readelf -d nmap | grep NEEDED || true
-          tar -czf $GITHUB_WORKSPACE/nmap-android-static.tar.gz nmap
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
+          $STRIP nmap; tar -czf $GITHUB_WORKSPACE/nmap-android-static.tar.gz nmap
+      - uses: actions/upload-artifact@v4
         with:
           name: nmap-android-static
           path: nmap-android-static.tar.gz
