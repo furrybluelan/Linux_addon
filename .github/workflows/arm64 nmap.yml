@@ -125,8 +125,8 @@ jobs:
           tar xf nmap-$VER.tar.bz2
           echo "NMAP_SRC_DIR=$PWD/nmap-$VER" >> $GITHUB_ENV
 
-      # 删除内部库目录（使用外部库）
-      - name: Remove internal libraries
+      # 第一次删除内部库目录（在 configure 前彻底清理）
+      - name: Remove internal libraries (before configure)
         run: |
           rm -rf $NMAP_SRC_DIR/liblua
           rm -rf $NMAP_SRC_DIR/libpcre
@@ -167,6 +167,7 @@ jobs:
             --without-nmap-update \
             --without-nping \
             --without-libssh \
+            --without-libssh2 \
             --without-pcre \
             --without-liblinear \
             --without-dnet \
@@ -177,10 +178,18 @@ jobs:
             --enable-static \
             --disable-shared
 
+      # 第二次删除内部库目录（在 make 前再次确保）
+      - name: Remove internal libraries again (before make)
+        run: |
+          rm -rf $NMAP_SRC_DIR/liblua
+          rm -rf $NMAP_SRC_DIR/libpcre
+          rm -rf $NMAP_SRC_DIR/libssh2
+          rm -rf $NMAP_SRC_DIR/liblinear
+          rm -rf $NMAP_SRC_DIR/nping
+
       - name: Compile nmap (static) with verbose output
         run: |
           cd $NMAP_SRC_DIR
-          # 直接运行 make，失败时自动输出错误（GHA 会捕获）
           make V=1 LDFLAGS="$LDFLAGS -static -pie -Wl,-z,max-page-size=0x1000 -Wl,-z,common-page-size=0x1000" LIBS="-llua -lpcap -lssl -lcrypto -lm"
           make install
 
@@ -197,3 +206,4 @@ jobs:
         with:
           name: nmap-android-static
           path: nmap-android-static.tar.gz
+  
