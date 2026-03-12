@@ -16,3 +16,4 @@
 本项目包含 Linux 内核代码，遵循 GNU General Public License v2.0<br>
 ## 下一步计划=====><br>
 添加wget git nmap更多命令支持
+优化部分代码
