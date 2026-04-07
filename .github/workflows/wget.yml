@@ -123,7 +123,7 @@ jobs:
           tar -xf bash-5.2.tar.gz
           cd bash-5.2
 
-          # Force detection of getpwent/endpwent and disable -Werror
+          # Force detection of pwent functions and disable -Werror
           ./configure \
             --host=$HOST \
             --disable-shared \
@@ -133,8 +133,10 @@ jobs:
             --with-curses \
             --prefix=/system \
             --disable-werror \
+            ac_cv_func_setpwent=yes \
             ac_cv_func_getpwent=yes \
             ac_cv_func_endpwent=yes \
+            CPPFLAGS="-D_GNU_SOURCE" \
             CC="$TOOLCHAIN_PATH/bin/${TOOLCHAIN}-clang" \
             AR="$TOOLCHAIN_PATH/bin/llvm-ar" \
             RANLIB="$TOOLCHAIN_PATH/bin/llvm-ranlib" \
