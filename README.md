@@ -2,6 +2,13 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 ![Platform](https://img.shields.io/badge/platform-arm64-blue)
 
+## 📄 License
+
+MIT License © 2026 [你的名字]
+
+Original SL by Toyoda Masashi (freely redistributable)
+
+
 ### ✨功能特性
 ✅基本全静态编译<br>
 ✅支持arm64架构<br>
