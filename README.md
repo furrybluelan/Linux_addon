@@ -6,8 +6,6 @@
 
 MIT License © 2026 [6ef1c6c]
 
-Original SL by Toyoda Masashi (freely redistributable)
-
 
 ### ✨功能特性
 ✅基本全静态编译<br>
