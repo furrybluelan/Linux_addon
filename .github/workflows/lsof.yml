@@ -1,0 +1,54 @@
+name: Build lsof (ARM64 Static)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build lsof (ARM64)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU for multi-architecture builds
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build static lsof inside ARM64 container
+        run: |
+          # 自动获取最新版本号
+          LATEST_VERSION=$(curl -s https://api.github.com/repos/lsof-org/lsof/releases/latest | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
+          echo "Latest lsof version: ${LATEST_VERSION}"
+
+          docker run --rm --platform linux/arm64 -v $(pwd):/workspace -w /workspace ubuntu:22.04 bash -c "
+            # 更新源并安装编译依赖
+            apt-get update && \
+            apt-get install -y wget build-essential file libtirpc-dev && \
+
+            # 下载并解压源码
+            wget https://github.com/lsof-org/lsof/archive/refs/tags/${LATEST_VERSION}.tar.gz && \
+            tar xzf ${LATEST_VERSION}.tar.gz && \
+            cd lsof-${LATEST_VERSION} && \
+
+            # 配置并编译（关键：设置 LDFLAGS 强制静态链接）
+            ./Configure -n linux && \
+            sed -i 's/^LDFLAGS =$/LDFLAGS = -static -all-static/' Makefile && \
+            make -j\$(nproc) && \
+
+            # 验证静态链接
+            file ./lsof | grep 'statically linked' || { echo 'Error: lsof is not statically linked'; exit 1; } && \
+
+            # 复制到工作区
+            cp ./lsof /workspace/
+          "
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: lsof-static-arm64
+          path: ./lsof
+          retention-days: 90
