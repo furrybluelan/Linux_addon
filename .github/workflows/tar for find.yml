@@ -25,7 +25,8 @@ jobs:
           echo "Using tar version: ${TAR_VERSION}"
           echo "Using findutils version: ${FIND_VERSION}"
 
-          docker run --rm --platform linux/arm64 -v $(pwd):/workspace -w /workspace ubuntu:22.04 bash -c "
+          # 使用 GITHUB_WORKSPACE 确保文件映射正确
+          docker run --rm --platform linux/arm64 -v $GITHUB_WORKSPACE:/workspace -w /workspace ubuntu:22.04 bash -c "
             apt-get update && \
             apt-get install -y wget build-essential file autoconf automake && \
 
@@ -83,16 +84,30 @@ jobs:
             echo 'Both builds succeeded.'
           "
 
+      - name: Verify artifacts exist
+        run: |
+          echo "Checking for artifacts in workspace:"
+          ls -la $GITHUB_WORKSPACE/
+          if [ ! -f "$GITHUB_WORKSPACE/tar-static-arm64" ]; then
+            echo "ERROR: tar-static-arm64 not found"
+            exit 1
+          fi
+          if [ ! -f "$GITHUB_WORKSPACE/find-static-arm64" ]; then
+            echo "ERROR: find-static-arm64 not found"
+            exit 1
+          fi
+          chmod +x $GITHUB_WORKSPACE/tar-static-arm64 $GITHUB_WORKSPACE/find-static-arm64
+
       - name: Upload tar artifact
         uses: actions/upload-artifact@v4
         with:
           name: tar-static-arm64
-          path: ./tar-static-arm64
+          path: ${{ github.workspace }}/tar-static-arm64
           retention-days: 90
 
       - name: Upload find artifact
         uses: actions/upload-artifact@v4
         with:
           name: find-static-arm64
-          path: ./find-static-arm64
+          path: ${{ github.workspace }}/find-static-arm64
           retention-days: 90
