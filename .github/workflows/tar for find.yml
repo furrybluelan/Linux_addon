@@ -20,22 +20,31 @@ jobs:
 
       - name: Build static tar and find inside ARM64 container
         run: |
-          # 自动获取 tar 和 findutils 的最新版本号
-          TAR_VERSION=$(curl -s https://ftp.gnu.org/gnu/tar/ | grep -oP 'tar-\K[0-9.]+(?=\.tar\.gz)' | sort -V | tail -1)
-          FIND_VERSION=$(curl -s https://ftp.gnu.org/gnu/findutils/ | grep -oP 'findutils-\K[0-9.]+(?=\.tar\.xz)' | sort -V | tail -1)
+          # 获取 tar 最新版本（GitHub API 优先，失败回退 1.35）
+          TAR_VERSION=$(curl -s https://api.github.com/repos/Distrotech/tar/tags | grep '"name":' | head -1 | sed -E 's/.*"v?([0-9.]+)".*/\1/')
+          if [ -z "$TAR_VERSION" ]; then
+            echo "GitHub API failed, using fallback version 1.35"
+            TAR_VERSION="1.35"
+          fi
           echo "Latest tar version: ${TAR_VERSION}"
+
+          # 获取 findutils 最新版本（GNU FTP 备用，失败回退 4.10.0）
+          FIND_VERSION=$(curl -s https://ftp.gnu.org/gnu/findutils/ | grep -oP 'findutils-\K[0-9.]+(?=\.tar\.xz)' | sort -V | tail -1)
+          if [ -z "$FIND_VERSION" ]; then
+            echo "GNU FTP parsing failed, using fallback version 4.10.0"
+            FIND_VERSION="4.10.0"
+          fi
           echo "Latest findutils version: ${FIND_VERSION}"
 
           docker run --rm --platform linux/arm64 -v $(pwd):/workspace -w /workspace ubuntu:22.04 bash -c "
-            # 安装基础依赖
             apt-get update && \
             apt-get install -y wget build-essential file autoconf automake && \
 
             # ========== 编译 tar ==========
             echo '=== Building tar ===' && \
-            wget https://ftp.gnu.org/gnu/tar/tar-\${TAR_VERSION}.tar.gz && \
-            tar xzf tar-\${TAR_VERSION}.tar.gz && \
-            cd tar-\${TAR_VERSION} && \
+            wget https://ftp.gnu.org/gnu/tar/tar-${TAR_VERSION}.tar.gz && \
+            tar xzf tar-${TAR_VERSION}.tar.gz && \
+            cd tar-${TAR_VERSION} && \
 
             # 修复 Bionic 类型不匹配补丁
             cat > fix-ialloc.patch << 'EOF'
@@ -58,7 +67,6 @@ jobs:
             EOF
             patch -p1 < fix-ialloc.patch && \
 
-            # 配置静态编译 (tar 不产生动态库，警告可忽略)
             FORCE_UNSAFE_CONFIGURE=1 \
             CFLAGS='-static' \
             LDFLAGS='-static' \
@@ -68,20 +76,20 @@ jobs:
             strip src/tar && \
             file src/tar | grep 'statically linked' || { echo 'Error: tar is not static'; exit 1; } && \
             cp src/tar /workspace/tar-static-arm64 && \
-            cd /workspace && rm -rf tar-\${TAR_VERSION}* && \
+            cd /workspace && rm -rf tar-${TAR_VERSION}* && \
 
             # ========== 编译 find ==========
             echo '=== Building find ===' && \
-            wget https://ftp.gnu.org/gnu/findutils/findutils-\${FIND_VERSION}.tar.xz && \
-            tar xJf findutils-\${FIND_VERSION}.tar.xz && \
-            cd findutils-\${FIND_VERSION} && \
+            wget https://ftp.gnu.org/gnu/findutils/findutils-${FIND_VERSION}.tar.xz && \
+            tar xJf findutils-${FIND_VERSION}.tar.xz && \
+            cd findutils-${FIND_VERSION} && \
 
             CFLAGS='-static' LDFLAGS='-static' ./configure --prefix=/usr && \
             make -j\$(nproc) && \
             strip find/find && \
             file find/find | grep 'statically linked' || { echo 'Error: find is not static'; exit 1; } && \
             cp find/find /workspace/find-static-arm64 && \
-            cd /workspace && rm -rf findutils-\${FIND_VERSION}* && \
+            cd /workspace && rm -rf findutils-${FIND_VERSION}* && \
 
             echo 'Both builds succeeded.'
           "
