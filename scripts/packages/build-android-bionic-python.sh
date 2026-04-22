@@ -165,6 +165,12 @@ export LIBLZMA_LIBS="-L${target_deps_prefix}/lib -llzma"
 #     LIBLZMA_CFLAGS / LIBLZMA_LIBS
 #       Force CPython's _lzma probe to use the target-side liblzma we
 #       just built instead of the runner's host pkg-config result.
+#     py_cv_module_readline=n/a / py_cv_module__uuid=n/a
+#       GitHub Actions also exposes host-side readline/libuuid headers
+#       and pkg-config metadata. These are optional modules and are not
+#       needed for the Android runtime bundle, so mark them as not
+#       applicable to prevent configure from enabling them based on the
+#       host environment.
 #     ac_cv_file__dev_ptmx / ac_cv_file__dev_ptc
 #       Bionic does not provide these devices; suppress the autoconf
 #       checks that would otherwise fail at configure time.
@@ -182,6 +188,8 @@ INSTALL_PREFIX="/data/local/python"
   --without-ensurepip \
   --disable-test-modules \
   --disable-ipv6 \
+  py_cv_module_readline=n/a \
+  py_cv_module__uuid=n/a \
   ac_cv_file__dev_ptmx=no \
   ac_cv_file__dev_ptc=no
 
