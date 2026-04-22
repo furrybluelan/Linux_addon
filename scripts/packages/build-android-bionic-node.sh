@@ -102,12 +102,17 @@ pushd "$src_dir" >/dev/null
 #                       NameError and configure fails.
 export GYP_DEFINES="android_ndk_path=${ANDROID_NDK_ROOT} host_os=linux"
 
-# Export host compilers as environment variables.  configure.py reads
+# Export host compilers as environment variables. configure.py reads
 # CC_host/CXX_host from os.environ when --cross-compiling is set.
-# Passing them as positional configure args would forward them raw to
-# GYP, which treats unknown positional arguments as .gyp file paths.
-export CC_host="$(command -v gcc)"
-export CXX_host="$(command -v g++)"
+# Prefer clang/clang++ for host-only tools: V8's bundled Highway host
+# sources use target attributes such as avx512fp16 that GCC on the
+# ubuntu-22.04 runners rejects, while clang accepts them.
+host_cc="$(command -v clang || command -v gcc)"
+host_cxx="$(command -v clang++ || command -v g++)"
+[[ -n "$host_cc" ]] || fail "No usable host C compiler found"
+[[ -n "$host_cxx" ]] || fail "No usable host C++ compiler found"
+export CC_host="$host_cc"
+export CXX_host="$host_cxx"
 
 ./configure \
   --dest-os=android \
